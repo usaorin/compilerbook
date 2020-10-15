@@ -23,6 +23,8 @@ struct token {
 
 // Current target token
 token_t *cur_token;
+// Input program
+char *user_input;
 
 // Output error
 void error(char *fmt, ...) {
@@ -33,20 +35,42 @@ void error(char *fmt, ...) {
 	exit(1);
 }
 
+// Report error position
+void error_at(char *loc, char *fmt, ...) {
+	va_list ap;
+	va_start(ap, fmt);
+
+	int pos = loc - user_input;
+	fprintf(stderr, "%s\n", user_input);
+	fprintf(stderr, "%*s", pos, "");
+	fprintf(stderr, "^ ");
+	fprintf(stderr, fmt, ap);
+	fprintf(stderr, "\n");
+	exit(1);
+}
+
 // Check expect operator symbol and consume a token.
 // Return true if the next token is the expected token, otherwise false.
-bool expect_op(char op) {
+bool consume(char op) {
 	if (cur_token->type != TK_RESERVED || cur_token->str[0] != op)
 		return false;
 	cur_token = cur_token->next;
 	return true;
 }
 
+// Check expect operator symbol and consume a token.
+// Output an error if it is not the expected symbol.
+void expect_op(char op) {
+	if (cur_token->type != TK_RESERVED || cur_token->str[0] != op)
+		error_at(cur_token->str, "Expected operator symbol.");
+	cur_token = cur_token->next;
+}
+
 // Check expect number and consume a token.
 // Return the number if the next token is the expected token, otherwise errorno(-1).
 int expect_number() {
 	if (cur_token->type != TK_NUM)
-		return -1;
+		error_at(cur_token->str, "Expected a number.");
 	int val = cur_token->val;
 	cur_token = cur_token->next;
 	return val;
@@ -66,7 +90,8 @@ token_t *new_token(token_type_t type, token_t *cur, char *str) {
 }
 
 // Tokenize the target string
-token_t *tokenize(char *p) {
+token_t *tokenize() {
+	char *p = user_input;
 	token_t head;
 	head.next = NULL;
 	token_t *cur = &head;
@@ -89,21 +114,21 @@ token_t *tokenize(char *p) {
 			continue;
 		}
 
-		error("Can not tokenize.");
+		error_at(p, "Invalid token.");
 	}
 
 	new_token(TK_EOF, cur, p);
 	return head.next;
 }
 
+
 int
 main(int argc, char **argv) {
-	if (argc != 2) {
-		fprintf(stderr, "The number of arguments is incorrect.\n");
-		return 1;
-	}
+	if (argc != 2)
+		error("The number of arguments is incorrect.\n");
 
-	cur_token = tokenize(argv[1]);
+	user_input = argv[1];
+	cur_token = tokenize();
 
 	// Outputs the first part of the assembly.
 	printf(".intel_syntax noprefix\n");
@@ -118,14 +143,13 @@ main(int argc, char **argv) {
 	printf("  mov rax, %d\n", n);
 
 	while (!at_eof()) {
-		if (expect_op('+')) {
+		if (consume('+')) {
 			printf("  add rax, %d\n", expect_number());
 			continue;
 		}
 
-		if (expect_op('-')) {
-			printf("  sub rax, %d\n", expect_number());
-		}
+		expect_op('-');
+		printf("  sub rax, %d\n", expect_number());
 	}
 
 	printf("  ret\n");
